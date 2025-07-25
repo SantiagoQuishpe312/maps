@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Ruta de Vuelo</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="stylesheet"
+            href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: #eef2f3;
+    }
+    #map {
+      height: 100vh;
+      width: 100%;
+    }
+    .label {
+      background: #1976d2;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-weight: bold;
+      font-size: 14px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    }
+    .tooltip-custom {
+      background: white;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      line-height: 1.5;
+    }
+    .tooltip-custom img {
+      width: 40px;
+      vertical-align: middle;
+    }
+    .tooltip-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+  </style>
+    </head>
+    <body>
+        <div id="map"></div>
+
+        <script>
+  const params = new URLSearchParams(location.search);
+  const lat1 = parseFloat(params.get("lat1"));
+  const lon1 = parseFloat(params.get("lon1"));
+  const aero1 = decodeURIComponent(params.get("aero1") || "Aeropuerto A");
+  const lat2 = parseFloat(params.get("lat2"));
+  const lon2 = parseFloat(params.get("lon2"));
+  const aero2 = decodeURIComponent(params.get("aero2") || "Aeropuerto B");
+
+const map = L.map("map");
+const bounds = L.latLngBounds([ [lat1, lon1], [lat2, lon2] ]);
+map.fitBounds(bounds, { padding: [50, 50] }); // padding para que no estén pegados al borde
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap",
+  }).addTo(map);
+
+  const R = 6371;
+  function haversine(lat1, lon1, lat2, lon2) {
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+  }
+
+  const distanceKM = haversine(lat1, lon1, lat2, lon2).toFixed(2);
+  const speed = 900; // km/h
+const totalTime = distanceKM / speed;
+const timeHrs = Math.floor(totalTime);
+const timeMin = Math.round((totalTime - timeHrs) * 60);
+const timeFormatted = `${timeHrs} h ${timeMin} min`;
+
+  const pointA = L.latLng(lat1, lon1);
+  const pointB = L.latLng(lat2, lon2);
+  const route = L.polyline([pointA, pointB], { color: "#1976d2", weight: 4 }).addTo(map);
+
+  // Etiqueta de distancia
+  let distanceMarker;
+const midPoint = L.latLng((lat1 + lat2) / 2, (lon1 + lon2) / 2);
+
+// Mostrar tooltip al pasar el mouse sobre la línea
+route.on("mouseover", () => {
+  distanceMarker = L.marker(midPoint, {
+    icon: L.divIcon({
+      html: `<div class="label"> Distancia del Vuelo ${distanceKM} km, tiempo estimado de Vuelo ${timeFormatted}</div>`,
+      className: "",
+      iconSize: [140, 30]
+    })
+  }).addTo(map);
+});
+
+// Ocultar tooltip al salir de la línea
+route.on("mouseout", () => {
+  if (distanceMarker) {
+    map.removeLayer(distanceMarker);
+    distanceMarker = null;
+  }
+});
+
+
+  function climaAleatorio() {
+    const climas = [
+      { desc: "Soleado", icon: "☀️", color: "#fbc02d" },
+      { desc: "Parcialmente nublado", icon: "🌤️", color: "#ffd54f" },
+      { desc: "Nublado", icon: "☁️", color: "#90a4ae" },
+      { desc: "Lluvia ligera", icon: "🌧️", color: "#4fc3f7" },
+      { desc: "Tormenta", icon: "⛈️", color: "#7986cb" },
+      { desc: "Nieve", icon: "❄️", color: "#81d4fa" },
+      { desc: "Niebla", icon: "🌫️", color: "#b0bec5" }
+    ];
+    const clima = climas[Math.floor(Math.random() * climas.length)];
+    const temp = (Math.random() * 25 + 5).toFixed(1); // entre 5°C y 30°C
+    return { ...clima, temp };
+  }
+
+  async function getTooltipHTML(lat, lon, airport) {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    const data = await res.json();
+    const city = data.address.city || data.address.town || data.address.village || "Desconocido";
+    const country = data.address.country || "Desconocido";
+    const code = (data.address.country_code || "xx").toLowerCase();
+    const clima = climaAleatorio();
+
+    return `
+      <div class="tooltip-custom" style="background-color: ${clima.color}; color: #000;">
+        <div class="tooltip-title">${airport}</div>
+        <div><strong>${city}, ${country}</strong> <img src="https://flagcdn.com/24x18/${code}.png" style="margin-left:5px"/></div>
+        <div style="font-size: 20px; margin-top: 6px;">${clima.icon} ${clima.desc}</div>
+        <div style="font-size: 18px; font-weight: bold;">${clima.temp}°C</div>
+      </div>
+    `;
+  }
+
+  (async () => {
+    const marker1 = L.marker(pointA).addTo(map);
+    const marker2 = L.marker(pointB).addTo(map);
+
+    const tooltip1 = await getTooltipHTML(lat1, lon1, aero1);
+    const tooltip2 = await getTooltipHTML(lat2, lon2, aero2);
+
+    marker1.bindTooltip(tooltip1, { direction: "top", sticky: true });
+marker2.bindTooltip(tooltip2, { direction: "top", sticky: true });
+
+marker1.on("mouseover", () => marker1.openTooltip());
+marker2.on("mouseover", () => marker2.openTooltip());
+
+marker1.on("mouseout", () => marker1.closeTooltip());
+marker2.on("mouseout", () => marker2.closeTooltip());
+
+  })();
+
+  // Animación de avión sobre la línea
+  const steps = 300;
+  const latlngs = [];
+  for (let i = 0; i <= steps; i++) {
+    const lat = lat1 + (lat2 - lat1) * i / steps;
+    const lon = lon1 + (lon2 - lon1) * i / steps;
+    latlngs.push([lat, lon]);
+  }
+
+  const airplaneIcon = L.divIcon({
+  html: '<div style="font-size: 32px;">✈️</div>',  // Aquí defines el tamaño
+    iconSize: [24, 24],
+    className: ""
+  });
+
+  const airplane = L.marker(latlngs[0], { icon: airplaneIcon }).addTo(map);
+  let i = 0;
+  const interval = setInterval(() => {
+    if (i >= latlngs.length) i = 0;
+    airplane.setLatLng(latlngs[i]);
+    i++;
+  }, 50);
+</script>
+
+    </body>
+</html>
